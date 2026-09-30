@@ -1,0 +1,14 @@
+# The seven OULAD CSVs — never commit. Download link is in README.md
+data/*
+!data/.gitkeep
+
+# Python / Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
