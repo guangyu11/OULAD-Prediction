@@ -55,6 +55,21 @@ immediately. Do not treat the absence as a zero.
 
 `final_result` in `studentInfo`: Distinction, Pass, Fail, Withdrawn.
 
+## What each research question needs
+
+**RQ1 — How early in a course can at-risk students be identified?**
+Build the same features at several cutoff days and see how performance changes. At a
+given cutoff, use only `studentVle` rows and `studentAssessment` submissions dated on or
+before it. Students whose `date_unregistration` falls before the cutoff have already
+withdrawn — decide whether to drop them, or the early cutoffs get an easy win.
+
+**RQ2 — Can behavioural data predict the final outcome better than background data?**
+- *Behavioural:* `studentVle` — clicks, active days, activity types.
+- *Background:* `studentInfo` demographics (gender, region, education, IMD band, age,
+  disability, previous attempts, credits) and `date_registration`.
+- *Undecided:* assessment scores from `studentAssessment`. They are neither clicks nor
+  background — agree as a group which side they go on, or keep them as a third set.
+
 ## Citation
 
 Jakub Kuzilek, Martin Hlosta, and Zdenek Zdrahal. 2017. Open University Learning
