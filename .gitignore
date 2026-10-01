@@ -12,3 +12,12 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# --- 补充 ---
+# 原始 zip 与解压残留（CSV 已按 README 约定移入 data/）
+open_university_learning_analytics_dataset/
+*.zip
+
+# 清洗后的宽表（44 MB）—— 刻意提交。
+# 这样队友不必下载 443 MB 原始数据、也不必跑 10 分钟清洗，
+# clone 下来直接就能建模。见 docs/data-layer.md。

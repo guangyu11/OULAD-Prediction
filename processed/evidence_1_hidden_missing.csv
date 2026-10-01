@@ -1,0 +1,7 @@
+表,列,'?' 数量,占比%,默认读取的 dtype,修正后的 dtype
+studentInfo,imd_band,1111,3.41,str,str
+studentRegistration,date_registration,45,0.14,str,float64
+studentRegistration,date_unregistration,22521,69.1,str,float64
+studentAssessment,score,173,0.1,str,float64
+vle,week_from,5243,82.39,str,float64
+vle,week_to,5243,82.39,str,float64
