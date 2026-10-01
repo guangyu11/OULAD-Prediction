@@ -1,6 +1,6 @@
 # Data layer — what's built, how to use it, what to check
 
-**Owner:** Wai Chun · **Last updated:** 1 Oct 2026
+**Owner:** Wai Chun · **Last updated:** 1 Oct 2026 (RQ1 sweep added)
 
 This covers the cleaning, aggregation and the shared split/preprocessing/evaluation code.
 Everything here is **up for review** — if a decision looks wrong, say so. Several of them
@@ -48,8 +48,10 @@ Rules we need to keep:
 | `evidence_1_hidden_missing.csv` | `?`-encoded missing values |
 | `evidence_2_leakage.csv` | `date_unregistration` leakage cross-tab |
 | `evidence_3_skewness.csv` | Skew before/after log per feature |
-| `lr_tuning_grid.csv` | 28 Logistic Regression runs |
-| `lr_test_results.csv` | Test-set numbers for baseline + LR |
+| `lr_tuning_grid.csv` | 28 Logistic Regression runs at cutoff 24 |
+| `lr_test_results.csv` | Test-set numbers for baseline + LR at cutoff 24 |
+| `rq1_cutoff_sweep.csv` | Baseline + LR across all four cutoffs |
+| `rq1_summary.csv` | Per-cutoff summary with lift over each cutoff's own baseline |
 
 All four tables have **identical columns** (61), so results are comparable across cutoffs.
 
@@ -216,10 +218,51 @@ Best `C` was 0.3 for `engineered`, 0.03 for `baseline` (searched 0.01 → 10).
 
 ---
 
+## RQ1 result so far (Logistic Regression only)
+
+All four cutoffs have now been swept with the majority baseline + LR
+(`A2_03_rq1_cutoff_sweep.ipynb`, results in `processed/rq1_cutoff_sweep.csv` and
+`rq1_summary.csv`, figure in `figures/fig_rq1_cutoff_sweep.png`).
+
+| Cutoff | n | Positive % | Majority baseline | LR background | LR + behaviour | Behaviour gain |
+|---|---|---|---|---|---|---|
+| 0 | 29,496 | 47.84 | 0.3452 | 0.6107 | 0.6568 | +0.046 |
+| 24 | 27,813 | 44.68 | 0.3517 | 0.6009 | 0.7136 | +0.113 |
+| 60 | 26,361 | 41.64 | 0.3709 | 0.5819 | 0.7528 | +0.171 |
+| 120 | 24,777 | 37.91 | 0.3847 | 0.5679 | 0.7911 | +0.223 |
+
+(macro-F1, test set. Each cutoff is scored against **its own** baseline because *n* and
+class balance shift as the risk set changes — raw scores are not comparable across cutoffs,
+the lift is.)
+
+**Two findings:**
+
+1. A usable signal exists before the course starts (0.657 vs a 0.345 baseline at day 0),
+   and keeps sharpening — it has not plateaued by the midpoint.
+2. The value of behavioural data grows ~5x from day 0 to day 120, monotonically, while
+   **background-only performance declines** (0.611 → 0.568, recall 0.546 → 0.284).
+
+Proposed explanation for (2): withdrawal is front-loaded (30.7 % before day 0, 50.2 % by
+day 28). The students most predictable from demographics are the ones who leave earliest,
+so later cutoffs have already removed them from the risk set. The curves diverge because
+the easy cases leave the sample, not because background information degrades.
+
+### ⚠️ This needs your models to be trustworthy
+
+Everything above is **one linear model**. The declining background curve could be a
+property of the data or a property of Logistic Regression — there is no way to tell from
+one model family.
+
+**Please run your model across all four cutoffs, not just 24.** The loop is in
+`A2_03_rq1_cutoff_sweep.ipynb` — swap the estimator and it works unchanged. If the same
+divergence shows up in a tree model and the MLP, the claim is solid; if it does not, that
+difference is itself a result worth reporting.
+
+---
+
 ## Not done yet
 
-- Only cutoff 24 has been modelled. The other three tables exist but no model has used them
-  (needed for the "how early" research question).
+- Tree models and MLP have not been run at any cutoff.
 - No error analysis beyond the confusion matrix.
 - Within-module comparison of repeat vs first-time students (controls for module difficulty).
 - Sensitivity analysis restricted to post-start withdrawals.
