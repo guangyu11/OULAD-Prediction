@@ -38,8 +38,8 @@ evaluation. It reads the raw CSVs from `data/` and builds everything in memory �
 2. Classical ML Models & Evaluation
    2.1 Majority baseline
    2.2 Logistic Regression   (tune C)
-   2.3 Random Forest         (tune min_samples_leaf / max_depth)
-   2.4 HistGradientBoosting  (tune learning_rate / max_depth)
+   2.3 Decision Tree         (tune max_depth)
+   2.4 Random Forest         (tune min_samples_leaf)
 3. Neural Network Model & Evaluation
    3.1 MLP                   (tune e.g. hidden size / alpha)
 4. Results: Research Questions
@@ -61,6 +61,41 @@ results += run(model, param_grid, cutoffs=CUTOFF_DAYS, feature_sets=FEATURE_SETS
 
 Section 4 builds the RQ tables and figures from `results` without retraining anything.
 Agree on the `run` signature before writing model code, so the sections merge without changes.
+
+### Model choice and the bias–variance spectrum
+
+The spec asks for algorithms that "cover some spectrum from high-bias/low-variance to
+low-bias/high-variance". All four models below are taught in the subject, so each result
+can be explained with lecture theory.
+
+| Model | Lecture | Bias / variance | Why | Tuned (grid search on validation macro-F1) |
+|---|---|---|---|---|
+| Logistic Regression | Wk 4 | **High bias, low variance** | Linear decision boundary only; L2 regularisation further limits variance | `C` ∈ {0.01, 0.03, 0.1, 0.3, 1, 3, 10} |
+| Decision Tree | Wk 3 | **Low bias, high variance** | Can split until leaves are pure; lecture lists "prone to overfitting" | `max_depth` ∈ {2, 4, 6, 8, 10, 15, 20, None} |
+| Random Forest | Wk 8 | **Low bias, reduced variance** | Bagging + random feature subsets average many trees, which cuts variance | `min_samples_leaf` ∈ {1, 5, 10, 20, 50} |
+| MLP (neural network) | Wk 7–8 | Low bias, high variance | Hidden layers can approximate non-linear functions | e.g. hidden size / `alpha` |
+
+**Why these three:**
+
+- **LR and DT are the two ends of the spectrum**: a rigid linear boundary vs a flexible tree
+  that can memorise the training set.
+- **RF is the DT with its variance removed.** The DT → RF gap measures what bagging buys
+  (Wk 8: "bagging reduces variance"). That is a direct, testable theory–practice link.
+- **Each tuning knob moves its model along the spectrum.** Small `C` or small `max_depth`
+  means more bias; large values mean more variance. Plotting train vs validation score
+  against `max_depth` reproduces the lecture's underfitting/overfitting curve on our own data.
+
+**Not chosen:**
+
+- **Naive Bayes:** its feature-independence assumption is clearly broken here (total clicks,
+  active days and click halves are strongly correlated), and `GaussianNB` has only
+  `var_smoothing` to tune.
+- **KNN:** distances are unreliable across ~60 mixed one-hot, ratio and count features
+  (curse of dimensionality), and prediction is slow at ~20k training rows.
+- **SVM:** with an RBF kernel it scales poorly to ~20k rows × 36 grid cells; linear SVM
+  would duplicate LR's position on the spectrum.
+- **Gradient boosting:** strong, but not taught (only AdaBoost is), so its results would be
+  harder to explain with course theory.
 
 ## Setup
 
