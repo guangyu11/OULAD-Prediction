@@ -21,6 +21,47 @@ Predicting at-risk students from the Open University Learning Analytics dataset.
 | `docs/` | Dataset notes, exported results and figures |
 | `data/` | The seven CSVs. Gitignored — never commit these |
 
+## Structure of `main.ipynb`
+
+The spec asks for one notebook covering data processing, models, visualisation and
+evaluation. It reads the raw CSVs from `data/` and builds everything in memory — no
+`processed/` files, no `import a2_common`.
+
+```
+0. Setup                         SEED, KEY, CUTOFF_DAYS, imports
+1. Data Preprocessing & Feature Engineering
+   1.1 Load raw CSVs
+   1.2 Background features, target
+   1.3 Click + assessment features per cutoff, risk set
+   1.4 Feature sets (background / behaviour / all)
+   1.5 Shared split, Pipeline, evaluate(), run loop   ← used by sections 2 and 3
+2. Classical ML Models & Evaluation
+   2.1 Majority baseline
+   2.2 Logistic Regression   (tune C)
+   2.3 Random Forest         (tune min_samples_leaf / max_depth)
+   2.4 HistGradientBoosting  (tune learning_rate / max_depth)
+3. Neural Network Model & Evaluation
+   3.1 MLP                   (tune e.g. hidden size / alpha)
+4. Results: Research Questions
+   4.1 RQ1: all models × all cutoffs   → table + line figure
+   4.2 RQ2: feature sets × models      → table + bar figure
+   4.3 Error analysis                  → confusion matrix + specific cases
+```
+
+**Section 1.5 comes before both model sections**, so the classical models and the neural
+network go through the same split, preprocessing and metrics. The rubric's validation
+design criterion checks exactly this.
+
+**Sections 2 and 3 produce results; section 4 reads them.** Every model runs over all
+cutoffs × feature sets and appends its rows to one shared `results` table:
+
+```python
+results += run(model, param_grid, cutoffs=CUTOFF_DAYS, feature_sets=FEATURE_SETS)
+```
+
+Section 4 builds the RQ tables and figures from `results` without retraining anything.
+Agree on the `run` signature before writing model code, so the sections merge without changes.
+
 ## Setup
 
 ```bash
