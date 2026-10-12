@@ -18,7 +18,7 @@ import a2_common as A2
 
 df = A2.load_table(24)                  # wide table at cutoff day 24
 train, val, test = A2.make_splits(df)   # grouped by student, stratified, 60/20/20
-cols = A2.feature_cols("engineered")    # or "baseline"
+cols = A2.feature_cols("engineered")    # or "baseline" / "behaviour"
 
 pipe, scores = A2.score_model(YourModel(...), cols, train, val)
 print(scores)   # accuracy, precision, recall, f1, macro_f1, roc_auc
@@ -119,7 +119,18 @@ a raw CSV yourself.
 | Set | Count | Contents |
 |---|---|---|
 | `baseline` | 14 | Background only: module, presentation, gender, region, disability, education (ordinal), IMD (ordinal), age band, previous attempts, credits, registration lead time, late-registration flag, course length |
-| `engineered` | 52 | baseline + 38 behavioural features |
+| `behaviour` | 38 | Behaviour only: everything generated after enrolment (VLE clickstream + assignment submissions). Nothing known at registration time. |
+| `engineered` | 52 | `baseline` + `behaviour` |
+
+By construction `engineered == baseline + behaviour`, with no overlap — this is asserted
+in `A2_01` so the three sets cannot silently drift apart. Call them with
+`A2.feature_cols("baseline" | "behaviour" | "engineered")`; please do not hand-slice the
+column list in your own notebook, or the three of us stop comparing the same thing.
+
+`behaviour` exists for the ablation: `baseline` vs `engineered` answers RQ2 as stated,
+and `behaviour` alone shows how much of the signal is carried by behaviour *without* any
+demographic information — useful if you want to argue the model is not simply
+reproducing demographic disparities.
 
 Behavioural features: total clicks, active days, distinct resources, max clicks in a day,
 mean clicks per active day, first-half vs second-half click counts and their ratio,

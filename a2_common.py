@@ -64,9 +64,32 @@ def manifest():
     return _manifest
 
 
+FEATURE_SET_NAMES = ("baseline", "behaviour", "engineered")
+
+
 def feature_cols(which="engineered"):
-    """'baseline' = 仅背景特征；'engineered' = 背景 + 行为特征。"""
-    return list(manifest()["feature_sets"][which])
+    """返回一套特征的列名。
+
+    三套，关系是 engineered = baseline + behaviour：
+
+        baseline    14 个  报名时就已知的背景信息（人口统计 + 选课信息）
+        behaviour   38 个  开课后才产生的行为信息（VLE 点击流 + 作业提交）
+        engineered  52 个  两者合并
+
+    RQ2 比的是 baseline vs engineered。
+    behaviour 单独一套是给「只用行为、不看背景」这种对照实验用的。
+    """
+    sets = manifest()["feature_sets"]
+
+    # 兜底：manifest 是重跑前的旧版（只有 baseline / engineered）时，
+    # 现场按 engineered - baseline 推出来，不用等整条流水线重跑。
+    if which == "behaviour" and "behaviour" not in sets:
+        base = set(sets["baseline"])
+        return [c for c in sets["engineered"] if c not in base]
+
+    if which not in sets:
+        raise KeyError(f"未知特征集 {which!r}，可选：{', '.join(sets)}")
+    return list(sets[which])
 
 
 def load_table(cutoff=MAIN_CUTOFF):
