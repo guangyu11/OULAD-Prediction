@@ -1,4 +1,4 @@
-表,列,'?' 数量,占比%,默认读取的 dtype,修正后的 dtype
+table,column,n_question_marks,share_%,dtype_default,dtype_corrected
 studentInfo,imd_band,1111,3.41,str,str
 studentRegistration,date_registration,45,0.14,str,float64
 studentRegistration,date_unregistration,22521,69.1,str,float64

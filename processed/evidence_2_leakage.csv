@@ -1,4 +1,4 @@
-final_result,有退课日期 %,无退课日期 %
+final_result,has_unregistration_date_%,no_unregistration_date_%
 Distinction,0.0,100.0
 Fail,0.13,99.87
 Pass,0.0,100.0

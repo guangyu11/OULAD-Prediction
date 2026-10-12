@@ -7,7 +7,7 @@
   ],
   "group_column": "id_student",
   "target": "at_risk",
-  "target_definition": "1 = Fail or Withdrawn (未完成); 0 = Pass or Distinction (已完成)",
+  "target_definition": "1 = Fail or Withdrawn; 0 = Pass or Distinction",
   "cutoffs": [
     0,
     24,
@@ -154,10 +154,9 @@
     "asm_n_submitted"
   ],
   "notes": [
-    "读取时必须使用 na_values=['?']",
-    "date_unregistration 保留在表中仅用于风险集判断，禁止作为特征",
-    "划分数据集必须按 id_student 分组（GroupShuffleSplit / StratifiedGroupKFold）",
-    "预处理必须放进 Pipeline，只对训练集 fit",
-    "skewed_cols 列建议在 Pipeline 中套 FunctionTransformer(np.log1p)，并对比变换前后"
+    "Read every CSV with na_values=['?']",
+    "date_unregistration defines the risk set and must never be a feature",
+    "Splits must be grouped by id_student",
+    "Preprocessing must sit inside a Pipeline and be fitted on training data only"
   ]
 }
