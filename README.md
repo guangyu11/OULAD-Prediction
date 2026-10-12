@@ -21,46 +21,161 @@ Predicting at-risk students from the Open University Learning Analytics dataset.
 | `docs/` | Dataset notes, exported results and figures |
 | `data/` | The seven CSVs. Gitignored — never commit these |
 
-## Structure of `main.ipynb`
+## How the deliverable code works
 
-The spec asks for one notebook covering data processing, models, visualisation and
-evaluation. It reads the raw CSVs from `data/` and builds everything in memory — no
-`processed/` files, no `import a2_common`.
+We submit **one notebook, `main.ipynb`**. The spec requires it to reproduce every number in
+the report, including data processing, models, visualisation and evaluation. It reads the
+raw CSVs from `data/`, builds everything in memory and runs top to bottom. It does not read
+the committed `processed/` files and does not `import a2_common` (that code is pasted in as §1.5).
+
+### Sections and owners
 
 ```
-0. Setup                         SEED, KEY, CUTOFF_DAYS, imports
-1. Data Preprocessing & Feature Engineering
+0. Setup                         imports, SEED, CUTOFF_DAYS, KEY
+1. Data Preprocessing & Feature Engineering                      ── Wai Chun
    1.1 Load raw CSVs
    1.2 Background features, target
    1.3 Click + assessment features per cutoff, risk set
    1.4 Feature sets (background / behaviour / all)
-   1.5 Shared split, Pipeline, evaluate(), run loop   ← used by sections 2 and 3
-2. Classical ML Models & Evaluation
+   1.5 Shared harness: splits, preprocessing, evaluate, run_experiment()   ← used by §2 and §3
+2. Classical ML Models & Evaluation                              ── Guangyu
    2.1 Majority baseline
    2.2 Logistic Regression   (tune C)
    2.3 Decision Tree         (tune max_depth)
    2.4 Random Forest         (tune min_samples_leaf)
-3. Neural Network Model & Evaluation
-   3.1 MLP                   (tune e.g. hidden size / alpha)
-4. Results: Research Questions
+   2.5 Summary               combined results table + best model
+3. Neural Network Model & Evaluation                             ── Xinyan
+   3.1 MLP                   (tune e.g. alpha / hidden size)
+4. Results: Research Questions                                   ── owner to confirm
    4.1 RQ1: all models × all cutoffs   → table + line figure
    4.2 RQ2: feature sets × models      → table + bar figure
    4.3 Error analysis                  → confusion matrix + specific cases
 ```
 
-**Section 1.5 comes before both model sections**, so the classical models and the neural
-network go through the same split, preprocessing and metrics. The rubric's validation
-design criterion checks exactly this.
+### How data and results flow
 
-**Sections 2 and 3 produce results; section 4 reads them.** Every model runs over all
-cutoffs × feature sets and appends its rows to one shared `results` table:
-
-```python
-results += run(model, param_grid, cutoffs=CUTOFF_DAYS, feature_sets=FEATURE_SETS)
+```mermaid
+flowchart TD
+    raw["data/ — 7 raw CSVs"] --> s1["§1 Data preprocessing & features"]
+    s1 --> splits["SPLITS<br/>{cutoff: (train, val, test)}"]
+    s1 --> fsets["FEATURE_SETS<br/>background · behaviour · all"]
+    s1 --> harness["§1.5 shared harness<br/>make_preprocessor · evaluate · score_model · run_experiment"]
+    splits & fsets & harness --> s2["§2 Classical models<br/>Baseline · LR · DT · RF"]
+    splits & fsets & harness --> s3["§3 Neural network<br/>MLP"]
+    s2 --> res["results — one table, same columns for every model"]
+    s3 --> res
+    s2 --> bp["best_pipe — best model at day 24, all features"]
+    s3 --> bp
+    res --> s4["§4.1–4.2 RQ1 · RQ2 tables and figures"]
+    bp --> s4e["§4.3 Error analysis"]
 ```
 
-Section 4 builds the RQ tables and figures from `results` without retraining anything.
-Agree on the `run` signature before writing model code, so the sections merge without changes.
+- **§1 comes first and is shared.** §2 and §3 use the same splits, preprocessing and metrics,
+  which is what the rubric's validation-design criterion checks.
+- **§2 and §3 are parallel.** Neither depends on the other; both only need §1.
+- **§4 is the only place they meet.** It combines their results and trains nothing.
+
+### What one model run does
+
+Every model is trained on the full **experiment grid**: 4 cutoffs × 3 feature sets = 12 cells,
+each tuned and tested separately. One call to `run_experiment()` covers all 12.
+
+```
+                 day 0      day 24     day 60     day 120     ← RQ1 reads across
+background        [ ]        [ ]        [ ]        [ ]
+behaviour         [ ]        [ ]        [ ]        [ ]
+all               [ ]        [★]        [ ]        [ ]
+      ↑
+ RQ2 reads down        ★ = main cell (day 24, all features): also keeps the
+                           tuning curve and the fitted model
+```
+
+Inside **every** cell, the same protocol runs. The test set never influences any choice:
+
+```mermaid
+flowchart LR
+    A["train (60%)"] -->|"fit, once per<br/>hyperparameter value"| B["score on val (20%)"]
+    B -->|"best value =<br/>highest val macro-F1"| C["refit on train + val (80%)"]
+    C -->|"score once"| D["test (20%)<br/>→ one results row"]
+```
+
+### Interfaces that must match across sections
+
+**The training loop** (defined once in §1.5, used by every model):
+
+```python
+rows, curve, best_pipe = run_experiment(name, model, param, values,
+                                        cutoffs=CUTOFF_DAYS, feature_sets=None)
+```
+
+| Argument | Meaning | Example |
+|---|---|---|
+| `name` | Label in the `model` column | `"LR"` |
+| `model` | Untrained scikit-learn estimator (cloned for every fit) | `LogisticRegression(max_iter=2000, random_state=SEED)` |
+| `param`, `values` | The one hyperparameter to tune, and the values to try | `"C"`, `[0.0001, 0.001, …, 10]` |
+| `cutoffs` | Which cutoffs to run; default all four (use `[24]` while testing) | `[0, 24, 60, 120]` |
+| `feature_sets` | Which feature sets to run; default all three | `None` |
+
+| Returns | Content |
+|---|---|
+| `rows` | One dict per cutoff × feature set: the chosen value and 6 test metrics |
+| `curve` | `{value: validation macro-F1}` for the main cell, used for the tuning-curve figure |
+| `best_pipe` | The fitted final model for the main cell, used for error analysis |
+
+**Results columns:** `model, cutoff, feature_set, best_param, accuracy, precision, recall, f1, macro_f1, roc_auc`
+
+**Feature-set names:** `background` (14 columns), `behaviour` (38), `all` (52)
+
+> `run_experiment()` relies on scikit-learn's `clone`, `set_params` and `predict_proba`. A
+> PyTorch or Keras model needs its own loop that follows the same protocol and returns the
+> same columns.
+
+### Template for a model section
+
+Each model section has the same three parts, so the notebook reads consistently:
+
+```
+2.x Model name
+    2.x.1 Train & tune     rows, curve, pipe = run_experiment(...)
+    2.x.2 Results          test macro-F1 table: cutoff × feature set
+    2.x.3 Tuning curve     validation score vs hyperparameter + chosen value per cell
+```
+
+```python
+# 2.2.1 Train & tune
+log_rows, log_curve, log_pipe = run_experiment(
+    "LR", LogisticRegression(max_iter=2000, random_state=SEED),
+    "C", [0.0001, 0.001, 0.01, 0.03, 0.1, 0.3, 1, 3, 10])
+
+# 2.2.2 Results
+pd.DataFrame(log_rows).pivot(index="cutoff", columns="feature_set", values="macro_f1")
+
+# 2.2.3 Tuning curve
+plot_curve("LR", log_curve, "C")
+```
+
+### Rules for code that goes into `main.ipynb`
+
+| Rule | Why |
+|---|---|
+| Use the shared helpers; never write your own split, scaler or metrics | Every model must use the same validation |
+| Validation chooses, test is scored once | A test set that influences choices gives an inflated score |
+| Pass `SEED` to every estimator and split | Same numbers on every run |
+| Each cutoff is a separate dataset; never pool cutoffs | Pooling puts the same student in several rows and mixes prediction times |
+| Same package versions: **scikit-learn 1.9.1, pandas 3.0.6** | A different version produced a different split before |
+| Checkpoint only after §1, with `joblib`, written earlier in the same run | §1 is the only memory-heavy step; reading stale files breaks reproducibility |
+| English comments and output | The markers read the notebook |
+
+### From work files to `main.ipynb`
+
+Each work file uses the **same section numbers** as `main.ipynb`, so merging is copy and
+paste in order:
+
+| Work file | Becomes | Not copied |
+|---|---|---|
+| `work_WaiChun.ipynb` | §1 | Plan / notes cells, the work file's own setup cell |
+| `work_Guangyu.ipynb` | §2 | Plan & hints cell, setup cell, CSV hand-off lines |
+| `work_Xinyan.ipynb` | §3 | Plan / notes cells, setup cell |
 
 ### Model choice and the bias–variance spectrum
 
@@ -70,9 +185,9 @@ can be explained with lecture theory.
 
 | Model | Lecture | Bias / variance | Why | Tuned (grid search on validation macro-F1) |
 |---|---|---|---|---|
-| Logistic Regression | Wk 4 | **High bias, low variance** | Linear decision boundary only; L2 regularisation further limits variance | `C` ∈ {0.01, 0.03, 0.1, 0.3, 1, 3, 10} |
+| Logistic Regression | Wk 4 | **High bias, low variance** | Linear decision boundary only; L2 regularisation further limits variance | `C` ∈ {0.0001, 0.001, 0.01, 0.03, 0.1, 0.3, 1, 3, 10} |
 | Decision Tree | Wk 3 | **Low bias, high variance** | Can split until leaves are pure; lecture lists "prone to overfitting" | `max_depth` ∈ {2, 4, 6, 8, 10, 15, 20, None} |
-| Random Forest | Wk 8 | **Low bias, reduced variance** | Bagging + random feature subsets average many trees, which cuts variance | `min_samples_leaf` ∈ {1, 5, 10, 20, 50} |
+| Random Forest | Wk 8 | **Low bias, reduced variance** | Bagging + random feature subsets average many trees, which cuts variance | `min_samples_leaf` ∈ {1, 2, 5, 10, 20, 50, 100} |
 | MLP (neural network) | Wk 7–8 | Low bias, high variance | Hidden layers can approximate non-linear functions | e.g. hidden size / `alpha` |
 
 **Why these three:**
@@ -102,9 +217,12 @@ can be explained with lecture theory.
 ```bash
 git clone <repo url>
 cd comp90049-a2
-pip install pandas numpy scikit-learn matplotlib seaborn jupyter nbstripout
+pip install pandas==3.0.6 scikit-learn==1.9.1 numpy matplotlib seaborn jupyter nbstripout
 nbstripout --install
 ```
+
+Use these exact pandas and scikit-learn versions. A different scikit-learn version can
+produce a different train/val/test split, and then nobody's numbers match.
 
 Then download the dataset from the link above, unzip, and put the seven CSVs directly
 in `data/`. Open your own `work_<name>.ipynb` and check you can load a CSV from `data/`.
