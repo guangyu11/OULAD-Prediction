@@ -25,25 +25,31 @@ Predicting at-risk students from the Open University Learning Analytics dataset.
 
 We submit **one notebook, `main.ipynb`**. The spec requires it to reproduce every number in
 the report, including data processing, models, visualisation and evaluation. It reads the
-raw CSVs from `data/`, builds everything in memory and runs top to bottom. It does not read
-the committed `processed/` files and does not `import a2_common` (that code is pasted in as §1.5).
+raw CSVs from `data/`, builds everything **in memory** and runs top to bottom.
+
+- **Nothing is written to disk.** Sections pass data to each other through variables
+  (`tables`, `FEATURE_SETS`, `SPLITS`, `results`), not files. It does not use `processed/`,
+  `manifest.json` or `import a2_common`.
+- **Status (13 Oct):** §0–§2 are migrated and verified. A full run takes about 4 minutes and
+  reproduces the work-file results exactly. §3 and §4 are still to come.
 
 ### Sections and owners
 
 ```
-0. Setup                         imports, SEED, CUTOFF_DAYS, KEY
+0. Setup                         imports, SEED, KEY, CUTOFF_DAYS, TARGET, GROUP_COL
 1. Data Preprocessing & Feature Engineering                      ── Wai Chun
    1.1 Load raw CSVs
-   1.2 Background features, target
-   1.3 Click + assessment features per cutoff, risk set
-   1.4 Feature sets (background / behaviour / all)
-   1.5 Shared harness: splits, preprocessing, evaluate, run_experiment()   ← used by §2 and §3
+   1.2 Evidence for the report (hidden "?" missing values, leakage, grouped structure)
+   1.3 Clean studentInfo, build the target
+   1.4 Aggregate per cutoff, risk set → tables; feature sets → FEATURE_SETS
+   1.5 Shared harness: make_splits, describe_splits, make_preprocessor
 2. Classical ML Models & Evaluation                              ── Guangyu
+   2.0 Config: SPLITS, evaluate / score_model, run_experiment(), plot_curve()   ← also used by §3
    2.1 Majority baseline
    2.2 Logistic Regression   (tune C)
    2.3 Decision Tree         (tune max_depth)
    2.4 Random Forest         (tune min_samples_leaf)
-   2.5 Summary               combined results table + best model
+   2.5 Delivery              combined results table + best model for error analysis
 3. Neural Network Model & Evaluation                             ── Xinyan
    3.1 MLP                   (tune e.g. alpha / hidden size)
 4. Results: Research Questions                                   ── owner to confirm
@@ -57,11 +63,12 @@ the committed `processed/` files and does not `import a2_common` (that code is p
 ```mermaid
 flowchart TD
     raw["data/ — 7 raw CSVs"] --> s1["§1 Data preprocessing & features"]
-    s1 --> splits["SPLITS<br/>{cutoff: (train, val, test)}"]
+    s1 --> tables["tables<br/>{cutoff: wide table}"]
     s1 --> fsets["FEATURE_SETS<br/>background · behaviour · all"]
-    s1 --> harness["§1.5 shared harness<br/>make_preprocessor · evaluate · score_model · run_experiment"]
-    splits & fsets & harness --> s2["§2 Classical models<br/>Baseline · LR · DT · RF"]
-    splits & fsets & harness --> s3["§3 Neural network<br/>MLP"]
+    s1 --> h15["§1.5 make_splits · make_preprocessor"]
+    tables & h15 --> s20["§2.0 Config<br/>SPLITS · score_model · run_experiment · plot_curve"]
+    s20 & fsets --> s2["§2.1–2.4 Classical models<br/>Baseline · LR · DT · RF"]
+    s20 & fsets --> s3["§3 Neural network<br/>MLP"]
     s2 --> res["results — one table, same columns for every model"]
     s3 --> res
     s2 --> bp["best_pipe — best model at day 24, all features"]
@@ -70,10 +77,11 @@ flowchart TD
     bp --> s4e["§4.3 Error analysis"]
 ```
 
-- **§1 comes first and is shared.** §2 and §3 use the same splits, preprocessing and metrics,
-  which is what the rubric's validation-design criterion checks.
-- **§2 and §3 are parallel.** Neither depends on the other; both only need §1.
-- **§4 is the only place they meet.** It combines their results and trains nothing.
+- **§1 and §2.0 come first and are shared.** §2 and §3 use the same splits, preprocessing,
+  metrics and training loop, which is what the rubric's validation-design criterion checks.
+- **§3 reuses §2.0**, which runs before it in the same notebook. Don't redefine `SPLITS` or
+  `run_experiment()` in §3.
+- **§4 is the only place the models meet.** It combines their results and trains nothing.
 
 ### What one model run does
 
@@ -101,7 +109,7 @@ flowchart LR
 
 ### Interfaces that must match across sections
 
-**The training loop** (defined once in §1.5, used by every model):
+**The training loop** (defined once in §2.0, used by every model):
 
 ```python
 rows, curve, best_pipe = run_experiment(name, model, param, values,
@@ -110,7 +118,7 @@ rows, curve, best_pipe = run_experiment(name, model, param, values,
 
 | Argument | Meaning | Example |
 |---|---|---|
-| `name` | Label in the `model` column | `"LR"` |
+| `name` | Label in the `model` column | `"LogisticRegression"` |
 | `model` | Untrained scikit-learn estimator (cloned for every fit) | `LogisticRegression(max_iter=2000, random_state=SEED)` |
 | `param`, `values` | The one hyperparameter to tune, and the values to try | `"C"`, `[0.0001, 0.001, …, 10]` |
 | `cutoffs` | Which cutoffs to run; default all four (use `[24]` while testing) | `[0, 24, 60, 120]` |
@@ -135,24 +143,27 @@ rows, curve, best_pipe = run_experiment(name, model, param, values,
 Each model section has the same three parts, so the notebook reads consistently:
 
 ```
-2.x Model name
-    2.x.1 Train & tune     rows, curve, pipe = run_experiment(...)
-    2.x.2 Results          test macro-F1 table: cutoff × feature set
-    2.x.3 Tuning curve     validation score vs hyperparameter + chosen value per cell
+### 2.x Model name
+#### 2.x.1 Train and tune, and produce evaluation results on test    rows, curve, pipe = run_experiment(...)
+#### 2.x.2 Sample results                                            test macro-F1 table: cutoff × feature set
+#### 2.x.3 Tuning curve                                              validation score vs hyperparameter + chosen value per cell
 ```
 
 ```python
-# 2.2.1 Train & tune
+# 2.2.1 Train and tune
 log_rows, log_curve, log_pipe = run_experiment(
-    "LR", LogisticRegression(max_iter=2000, random_state=SEED),
+    "LogisticRegression", LogisticRegression(random_state=SEED, max_iter=2000),
     "C", [0.0001, 0.001, 0.01, 0.03, 0.1, 0.3, 1, 3, 10])
 
-# 2.2.2 Results
+# 2.2.2 Sample results
 pd.DataFrame(log_rows).pivot(index="cutoff", columns="feature_set", values="macro_f1")
 
 # 2.2.3 Tuning curve
-plot_curve("LR", log_curve, "C")
+plot_curve("LogisticRegression", log_curve, "C")
 ```
+
+Model labels are spelled out in full (`"LogisticRegression"`, `"DecisionTree"`, `"RandomForest"`),
+so §3 should follow the same style (e.g. `"MLP"`).
 
 ### Rules for code that goes into `main.ipynb`
 
@@ -163,7 +174,8 @@ plot_curve("LR", log_curve, "C")
 | Pass `SEED` to every estimator and split | Same numbers on every run |
 | Each cutoff is a separate dataset; never pool cutoffs | Pooling puts the same student in several rows and mixes prediction times |
 | Same package versions: **scikit-learn 1.9.1, pandas 3.0.6** | A different version produced a different split before |
-| Checkpoint only after §1, with `joblib`, written earlier in the same run | §1 is the only memory-heavy step; reading stale files breaks reproducibility |
+| Write nothing to disk; pass data between sections in memory | Reading files left over from an older run breaks reproducibility. The raw click table is freed (`del student_vle, asm`) once the wide tables are built |
+| Define each shared object once (`FEATURE_SETS` in 1.4.5, `SPLITS` in 2.0.1) | A second definition silently overwrites the first |
 | English comments and output | The markers read the notebook |
 
 ### From work files to `main.ipynb`
@@ -173,9 +185,19 @@ paste in order:
 
 | Work file | Becomes | Not copied |
 |---|---|---|
-| `work_WaiChun.ipynb` | §1 | Plan / notes cells, the work file's own setup cell |
-| `work_Guangyu.ipynb` | §2 | Plan & hints cell, setup cell, CSV hand-off lines |
+| `work_WaiChun.ipynb` | §1 ✅ migrated | Plan / notes cells, setup cell, `to_csv` / manifest saving, 1.6.1 |
+| `work_Guangyu.ipynb` | §2 ✅ migrated | Plan & hints cell, setup cell, 2.0 Config (now in `main.ipynb` §2.0), `to_csv` line |
 | `work_Xinyan.ipynb` | §3 | Plan / notes cells, setup cell |
+
+When pasting work-file code, translate the `a2_common` calls:
+
+| Work file | `main.ipynb` |
+|---|---|
+| `import a2_common as A2` | *(remove: everything is already defined above)* |
+| `A2.score_model(...)`, `A2.make_splits(...)`, … | `score_model(...)`, `make_splits(...)`, … |
+| `A2.load_table(24)` | `tables[24]` |
+| `A2.feature_cols("baseline")` / `("behaviour")` / `("engineered")` | `FEATURE_SETS["background"]` / `["behaviour"]` / `["all"]` |
+| `A2.SEED`, `A2.TARGET` | `SEED`, `TARGET` |
 
 ### Model choice and the bias–variance spectrum
 
@@ -187,7 +209,7 @@ can be explained with lecture theory.
 |---|---|---|---|---|
 | Logistic Regression | Wk 4 | **High bias, low variance** | Linear decision boundary only; L2 regularisation further limits variance | `C` ∈ {0.0001, 0.001, 0.01, 0.03, 0.1, 0.3, 1, 3, 10} |
 | Decision Tree | Wk 3 | **Low bias, high variance** | Can split until leaves are pure; lecture lists "prone to overfitting" | `max_depth` ∈ {2, 4, 6, 8, 10, 15, 20, None} |
-| Random Forest | Wk 8 | **Low bias, reduced variance** | Bagging + random feature subsets average many trees, which cuts variance | `min_samples_leaf` ∈ {1, 2, 5, 10, 20, 50, 100} |
+| Random Forest | Wk 8 | **Low bias, reduced variance** | Bagging + random feature subsets average many trees, which cuts variance | `min_samples_leaf` ∈ {1, 2, 5, 10, 20} (`n_estimators=100`, fixed) |
 | MLP (neural network) | Wk 7–8 | Low bias, high variance | Hidden layers can approximate non-linear functions | e.g. hidden size / `alpha` |
 
 **Why these three:**
@@ -221,8 +243,13 @@ pip install pandas==3.0.6 scikit-learn==1.9.1 numpy matplotlib seaborn jupyter n
 nbstripout --install
 ```
 
-Use these exact pandas and scikit-learn versions. A different scikit-learn version can
-produce a different train/val/test split, and then nobody's numbers match.
+Use **scikit-learn 1.9.1** exactly. Tested on 13 Oct: the scikit-learn version alone decides
+the train/val/test split (1.7.2 produces a different one), so on another version nobody's
+numbers match. pandas, numpy and scipy don't affect the split. To check your environment:
+
+```python
+import sklearn; print(sklearn.__version__)            # must print 1.9.1
+```
 
 Then download the dataset from the link above, unzip, and put the seven CSVs directly
 in `data/`. Open your own `work_<name>.ipynb` and check you can load a CSV from `data/`.
@@ -256,17 +283,17 @@ Commit messages: short, say the area. `features: clicks by activity type`,
 
 Tick these off as they land.
 
-- [ ] Data downloaded, row counts confirmed
-- [ ] Unique students vs 32,593 rows — is the unit a student or a student-presentation?
-- [ ] Target decided: four classes or binary at-risk
-- [ ] Cutoff days to compare for RQ1 decided
-- [ ] Split decided and justified
-- [ ] Modelling table built
-- [ ] Shared evaluation function works — same folds, same metrics, any model
-- [ ] Baseline computed
-- [ ] Four models trained at defaults
-- [ ] All four tuned, search ranges logged
-- [ ] RQ2: behavioural-only vs background-only feature sets compared
+- [x] Data downloaded, row counts confirmed
+- [x] Unique students vs 32,593 rows — the unit is a student-presentation (enrolment); 3,538 students repeat
+- [x] Target decided: binary `at_risk` (Fail + Withdrawn vs Pass + Distinction)
+- [x] Cutoff days to compare for RQ1 decided: 0 / 24 / 60 / 120
+- [x] Split decided and justified: 60/20/20, grouped by student, stratified on `at_risk`
+- [x] Modelling table built (`tables` in `main.ipynb` §1.4)
+- [x] Shared evaluation function works — same folds, same metrics, any model (`run_experiment()`)
+- [x] Baseline computed
+- [ ] Four models trained — LR, DT, RF done; MLP pending (§3)
+- [ ] All four tuned, search ranges logged — LR, DT, RF done; MLP pending
+- [ ] RQ2: behavioural-only vs background-only feature sets compared — done for LR, DT, RF; MLP pending
 - [ ] Error analysis done
 - [ ] Results frozen, everything exported to `docs/`
 - [ ] Report drafted

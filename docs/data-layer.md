@@ -2,6 +2,16 @@
 
 **Owner:** Wai Chun · **Last updated:** 1 Oct 2026 (RQ1 sweep added)
 
+> **Status note (13 Oct):** this page describes the **work-file** setup (`processed/` files,
+> `manifest.json`, `import a2_common`). In the submitted **`main.ipynb`**, Section 1 builds
+> the tables in memory and writes nothing to disk; see the README section "How the
+> deliverable code works".
+>
+> The split table and results under "Numbers to expect" and "RQ1 result so far" were produced
+> with **scikit-learn 1.7.2**, which gives a different split. With the agreed **1.9.1**, the
+> day-24 split is 16,688 / 5,563 / 5,562 and the baseline macro-F1 is 0.3562. Use the 1.9.1
+> numbers (`processed/splits_summary.csv`, `processed/lr_test_results.csv`) as the reference.
+
 This covers the cleaning, aggregation and the shared split/preprocessing/evaluation code.
 Everything here is **up for review** — if a decision looks wrong, say so. Several of them
 are judgement calls and the report has to defend them, so it is better to argue now.
