@@ -1,4 +1,0 @@
-model,features,accuracy,precision,recall,f1,macro_f1,roc_auc
-Majority-class baseline,—,0.5532,0.0,0.0,0.0,0.3562,0.5
-Logistic Regression,background only,0.6163,0.5933,0.4491,0.5112,0.5977,0.6438
-Logistic Regression,background + behaviour,0.7168,0.72,0.5992,0.6541,0.7072,0.7729
